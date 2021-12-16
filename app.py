@@ -1,149 +1,276 @@
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
 import streamlit as st
-import json
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import math
+from Functions import *
+
+# Streamlit App Setup
+st.set_page_config(layout="wide", page_title="PVT Calculator")
 plt.style.use('seaborn')
 
-st.title('Production Data Viewer')
+# FUNCTIONS
+# arguments (P, T, gas_SG, oil_API, Pb, Psep, Tsep, sat_condition, TDS, corr, Psc, H2S, CO2, N2)
 
-# load data
-@st.cache
-def load_data():
-	df = pd.read_csv('produksi_minyak_mentah.csv')
-	df = df[df.columns[:3]]
-	return df
+def output(P, T, gas_SG, oil_API, Pb, Psep, Tsep, sat_condition, TDS, corr, Psc, H2S, CO2, N2):
+	df = pd.DataFrame()
+	df['Properties'] = ['P', 'Bo', 'Rs', 'Bg', 'Bw', 'Rsw', 'Z', 'Oil Density', 'Gas Density', 'Brine Density', 'Oil Viscosity', 'Gas Viscosity', 'Brine Viscosity', 'Co', 'Cg', 'Cw']
 
-# load json data
-@st.cache
-def load_json():
-	file_json = open('./kode_negara_lengkap.json')
-	json_data = json.load(file_json)
-	return json_data
+	# setup
+	T_rankine = T + 460
+	oil_SG = oil_SG_(oil_API)
+	Ygs = Ygs_(gas_SG, oil_API, Tsep, Psep)
+	Ma = Mg_(gas_SG)
 
-df = load_data()
-json_data = load_json()
+	Ppc = Ppc_(gas_SG, corr)
+	Tpc = Tpc_(gas_SG, corr)
+
+	# corrected
+	Ppc = Ppc_corr_(Ppc, H2S, CO2, N2)
+	Tpc = Tpc_corr_(Tpc, H2S, CO2, N2)
+	print(Ppc, Tpc)
+
+	Ppr = Ppr_(P, Ppc)
+	Tpr = Tpr_(T_rankine, Tpc)
+
+	print(Ppr, Tpr)
+	Z = DranchukAbouKassem_(Ppr, Tpr)
+	print(Z)
+
+	# calculate
+	Rs = Rso_(P, oil_API, T, Psep, Ygs, Pb)
+	Co = co(P, Pb, oil_API, T, gas_SG, Rs)
+	Bob = oilfvf_(oil_API, T_rankine, Rs, Ygs, P, Pb, Co)
+	Bo = oilfvf_(oil_API, T_rankine, Rs, Ygs, P, Pb, Co)
+	Bg = Bg_(Z,T_rankine,P, Psc)
+	Bw = Bw_(P, T)
+	Rsw = Rsw_(P, T, TDS)
+	Conditions = sat_condition_(P, Pb)
+	oil_density = oil_density_(oil_SG, gas_SG, Rs, T_rankine)
+	gas_density = gas_density_(P,gas_SG,Z,T)
+	brine_density = brine_density_(TDS)
+	oil_viscosity = oil_viscosity_(T ,gas_SG, Rs, P, Pb, oil_API)
+	gas_viscosity = gas_viscosity_(gas_density, T, Ma)
+	brine_viscosity = brine_viscosity_(TDS, T)
+	Co = co(P, Pb, oil_API, T, gas_SG, Rs)
+	Cg = Cg_(Tpr,Ppr,Z,Ppc)
+	Cw = Cw_(P, T)
+
+	#konversi unit
+	P = round(P, 1)
+	Rs = Rs * 1e-3
+	Bg = Bg * 1e3
+	Cw = Cw * 1e5
+	Co = Co * 1e5
+	Cg = Cg * 1e5
+
+	df['Values'] = [P, Bo, Rs, Bg, Bw, Rsw, Z, oil_density, gas_density, brine_density, oil_viscosity, gas_viscosity, brine_viscosity, Co, Cg, Cw]
+
+	st.write(f'Condition: {Conditions}')
+	st.table(df)
+
+def show_table(P, T, gas_SG, oil_API, Pb, Psep, Tsep, sat_condition, TDS, corr, Psc, H2S, CO2, N2):
+	table = pd.DataFrame()
+	# setup
+	T_rankine = T + 460
+	oil_SG = oil_SG_(oil_API)
+	Ygs = Ygs_(gas_SG, oil_API, Tsep, Psep)
+	Ma = Mg_(gas_SG)
+
+	Ppc = Ppc_(gas_SG, corr)
+	Tpc = Tpc_(gas_SG, corr)
+
+	# corrected
+	Ppc = Ppc_corr_(Ppc, H2S, CO2, N2)
+	Tpc = Tpc_corr_(Tpc, H2S, CO2, N2)
+	Tpr = Tpr_(T_rankine, Tpc)
+
+	list_P = np.arange(150, 4600, 150)
+	table = pd.DataFrame()
+
+	Rs_list = list()
+	Co_list = list()
+	Bo_list = list()
+	Bg_list = list()
+	Bw_list = list()
+	Rsw_list = list()
+	Z_list = list()
+	Conditions_list = list()
+	oil_density_list = list()
+	gas_density_list = list()
+	brine_density_list = list()
+	oil_viscosity_list = list()
+	gas_viscosity_list = list()
+	brine_viscosity_list = list()
+	Cg_list = list()
+	Cw_list = list()
 
 
-# buat list kode negara utk filter kode negara yg avalilable
-@st.cache
-def dict_nama_negara_generator():
-	list_kode_negara = df.kode_negara.unique()
-	dict_nama_negara = dict()
-	for negara in json_data:
-	    if negara['alpha-3'] in list_kode_negara:
-	        dict_nama_negara.update({negara['alpha-3']: negara['name']})
-	return dict_nama_negara
+	# buat list sendiri, append ke df
+	for P in list_P:
+	    # Rs
+	    Rs = Rso_(P, oil_API, T, Psep, Ygs, Pb) 
+	    Rs_list.append(Rs*1e-3)
 
-dict_nama_negara = dict_nama_negara_generator()
+	    #Co
+	    Co = co(P, Pb, oil_API, T, gas_SG, Rs)
+	    Co_list.append(Co*1e5)
 
-# setup function untuk mengconvert kode negara
-def convert_kode_negara(kode):
-    try:
-        return dict_nama_negara[kode]
-    except:
-        return kode
+	    # Bo
+	    Bo = oilfvf_(oil_API, T_rankine, Rs, Ygs, P, Pb, Co)
+	    Bo_list.append(Bo)
 
-#========
-# no 1) line chart produksi per negara (produksi vs tahun)
-negara_options = df.kode_negara.unique()
-st.subheader('Production by country')
-negara = st.selectbox(label="Negara", options=negara_options, key='negara_1')
+	    # Z
+	    Ppr = Ppr_(P, Ppc)
+	    Z = DranchukAbouKassem_(Ppr, Tpr)
+	    Z_list.append(Z)
 
-line_chart_data = df[df['kode_negara'] == negara][['tahun', 'produksi']]
-line_chart_x = df[df['kode_negara'] == negara].tahun
-line_chart_y = df[df['kode_negara'] == negara].produksi
-fig_1, ax1 = plt.subplots()
-ax1.plot(line_chart_x, line_chart_y)
-ax1.set_title(f'Produksi {convert_kode_negara(negara)}')
-st.pyplot(fig_1)
+	    # Bg
+	    Bg = Bg_(Z,T_rankine,P, Psc)
+	    Bg_list.append(Bg*1e3)
+
+	    # Bw   
+	    Bw = Bw_(P, T)
+	    Bw_list.append(Bw)
+
+	    # Rsw
+	    Rsw = Rsw_(P, T, TDS)
+	    Rsw_list.append(Rsw)
+
+	    # conditions
+	    Conditions = sat_condition_(P, Pb)
+	    Conditions_list.append(Conditions)
+
+	    # oil density
+	    oil_density = oil_density_(oil_SG, gas_SG, Rs, T_rankine)
+	    oil_density_list.append(oil_density)
+
+	    # gas_density
+	    gas_density = gas_density_(P,gas_SG,Z,T)
+	    gas_density_list.append(gas_density)
+
+	    # brine density
+	    brine_density = brine_density_(TDS)
+	    brine_density_list.append(brine_density)
+
+	    # oil viscosity
+	    oil_viscosity = oil_viscosity_(T ,gas_SG, Rs, P, Pb, oil_API)
+	    oil_viscosity_list.append(oil_viscosity)
+
+	    # gas viscosity
+	    Ma = Mg_(gas_SG)
+	    gas_viscosity = gas_viscosity_(gas_density, T, Ma)
+	    gas_viscosity_list.append(gas_viscosity)
+
+	    # brine viscosity
+	    brine_viscosity = brine_viscosity_(TDS, T)
+	    brine_viscosity_list.append(brine_viscosity)
+
+	    # Cg
+	    Cg = Cg_(Tpr,Ppr,Z,Ppc)
+	    Cg_list.append(Cg*1e5)
+
+	    # Cw
+	    Cw = Cw_(P, T)
+	    Cw_list.append(Cw*1e5)
+
+	# append ke table
+	table['P'] = list_P
+	table['Bo'] = Bo_list
+	table['Rs'] = Rs_list
+	table['Bg'] = Bg_list
+	table['Bw'] = Bw_list
+	table['Rsw'] = Rsw_list
+	table['Conditions'] = Conditions_list
+	table['Z'] = Z_list
+	table['Oil Density'] = oil_density_list
+	table['Gas Density'] = gas_density_list
+	table['Brine Density'] = brine_density_list
+	table['Oil Viscosity'] = oil_viscosity_list
+	table['Gas Viscosity'] = gas_viscosity_list
+	table['Brine Viscosity'] = brine_viscosity_list
+	table['Co'] = Co_list
+	table['Cg'] = Cg_list
+	table['Cw'] = Cw_list
+
+	return table
 
 
-#===========
-# no 2) bar chart n negara terbesar pada tahun tertentu
-st.subheader('N Negara Produksi Terbesar')
-number_2 = st.slider(label='Banyak negara', min_value=1, max_value=142, key='number_2') # buat slider streamlit
-tahun = st.slider(label='Tahun', min_value=1970, max_value=2015, key='tahun_2')
-# algo
-max_prod = df[df.tahun == tahun].produksi.sort_values(ascending=False)[:number_2].values
-fig_2, ax2 = plt.subplots()
-for prod in max_prod:
-	# find kode negara
-	kode_negara_prod_max = df[(df.tahun == tahun) & (df.produksi == prod)].kode_negara.item() # dah dalam string
-	# convert ke nama negara
-	nama_negara_prod_max = convert_kode_negara(kode_negara_prod_max)
-	# buat plot
-	ax2.barh(nama_negara_prod_max, prod)
-    
-plt.title(f'{number_2} Negara dengan Produksi Terbesar Tahun {tahun}')
-st.pyplot(fig_2)
+
+# STREAMLIT UI
+st.title('PVT Calculator')
+st.markdown('''**Tugas Besar Fluida Reservoir oleh:**  
+1. Bagus Aulia Ahmad Fahrezi - 12220108  
+2. Dimas Naufal Al Ghifari - 12220114  
+3. Haris Permana - 12220075  
+4. Muhammad Naufal Aurora - 12220081  
+5. Rizqy Wahyu Bachtiar - 12220087''')
+
+col1, col2, col3 = st.columns(3)
+
+with col1:
+	st.subheader('General Data')
+	T = st.number_input('Reservoir Temperature (°F)')
+	P_initial = st.number_input('Initial Reservoir Pressure (psia)')
+	Psc = st.number_input('Standard Pressure, Psc (psia)')
+	gas_SG = st.number_input('Gas Gravity (Air = 1.0)')
 
 
-#========
-# no 3) barh chart n negara dengan produksi kumulatif terbesar
-st.subheader('N Negara Produksi Kumulatif Terbesar')
-number_3 = st.slider(label='Banyak negara', min_value=1, max_value=142, key='number_3')
+with col2:
+	st.subheader('Separator Data')
+	Psep = st.number_input('Separator Pressure, Psep (psia)')
+	Tsep = st.number_input('Separator Temperature, Tsep (psia)')
 
-xs = df.groupby(['kode_negara']).sum().sort_values(by='produksi', ascending=False).produksi[:number_3].index
-ys = df.groupby(['kode_negara']).sum().sort_values(by='produksi', ascending=False).produksi[:number_3]
-fig3, ax3 = plt.subplots()
+	st.subheader('Brine Data')
+	sat_condition = st.selectbox('Saturation Condition', 
+		('Gas Saturated Brine', 'Gas Free Brine'))
+	TDS = st.number_input('Total Dissolved Solids, TDS (% Weight)')
 
-for x, y in zip(xs, ys):
-	x = convert_kode_negara(x)
-	ax3.barh(x, y)
+with col3:
+	st.subheader('Correlation Method')
+	corr = st.selectbox('Ppc/Tpc Correlation',
+		('Sutton', 'Misc Standing', 'Condensate Standing'))
 
-plt.title(f'{number_3} Negara dengan Produksi Kumulatif Terbesar')
-st.pyplot(fig3)
+	st.subheader('Impurities')
+	H2S = st.number_input('H2S (% mole)')
+	CO2 = st.number_input('CO2 (% mole)')
+	N2 = st.number_input('N2 (% mole)')
 
+col1_1, col2_1 = st.columns(2)
 
-#==========
-# no 4)
-def search_in_json(kode):
-    for negara in json_data:
-        if negara['alpha-3'] == kode:
-            return negara
+with col1_1:
+	st.subheader('Oil Data')
+	oil_API = st.number_input('Oil API (°API)')
+	Pb = st.number_input('Bubblepoint Pressure, Pb (psia)')
+	
+with col2_1:
+	st.subheader('Pressure of Interest')
+	P = st.number_input('Pressure, P (psia)')
 
-tahun4 = st.slider(label='Tahun', min_value=1970, max_value=2015, key='tahun4')
+st.subheader('PVT Output')
+output(P, T, gas_SG, oil_API, Pb, Psep, Tsep, sat_condition, TDS, corr, Psc, H2S, CO2, N2)
 
-# tunjukkin yang terbesar
-kode_negara_terbesar = df[df.tahun == tahun4].sort_values(by='produksi', ascending=False).kode_negara[:1].values[0]
-kode_negara_terkecil = df[(df.tahun == tahun4) & (df.produksi != 0)].sort_values(by='produksi').kode_negara[:1].values[0]
-kode_negara_nol = df[(df.tahun == tahun4) & (df.produksi == 0)].kode_negara.values
+st.subheader('Property Table')
+table = show_table(P, T, gas_SG, oil_API, Pb, Psep, Tsep, sat_condition, TDS, corr, Psc, H2S, CO2, N2)
+st.dataframe(table)
 
-# ambil data json lewt kode
-# terbesar
-negara = search_in_json(kode_negara_terbesar)
-st.write('**Produksi Terbesar**')
-if negara == None: # kode negaranya gaada di data json
-	st.write(f'Data {kode_negara_terbesar} tidak ada di JSON')
-else:
-	st.write(negara['name'],
-	    negara['alpha-3'],
-	    negara['region'],
-	    negara['sub-region'],
-	    df[(df.kode_negara == kode_negara_terbesar) & (df.tahun == tahun4)].produksi.values[0])
+st.subheader('Graphs')
+colx, coly = st.columns(2)
 
-# terkecil
-negara = search_in_json(kode_negara_terkecil)
-st.write('**Produksi Terkecil**')
-if negara == None: # kode negaranya gaada di data json
-    st.write(f'Data {kode_negara_terkecil} tidak ada di JSON')
-else:
-    st.write(negara['name'],
-	    negara['alpha-3'],
-	    negara['region'],
-	    negara['sub-region'],
-	    df[(df.kode_negara == kode_negara_terkecil) & (df.tahun == tahun4)].produksi.values[0])
-    
-# yg 0
-st.write('**Produksi 0**')
-for kode in kode_negara_nol:
-    negara = search_in_json(kode)
-    if negara == None: # kode negaranya gaada di data json
-        st.write(f'Data {kode} tidak ada di JSON')
-    else:
-        st.write(negara['name'],
-            negara['alpha-3'],
-            negara['region'],
-            negara['sub-region'],
-            df[(df.kode_negara == kode) & (df.tahun == tahun4)].produksi.values[0])
+with colx:
+	x_axis = st.selectbox('Select X Axis',
+		('P', 'Bo', 'Rs', 'Bg', 'Bw', 'Rsw', 'Z', 'Oil Density', 'Gas Density', 'Brine Density', 'Oil Viscosity', 'Gas Viscosity', 'Brine Viscosity', 'Co', 'Cg', 'Cw'))
+
+with coly:
+	y_axis = st.selectbox('Select Y Axis',
+		('P', 'Bo', 'Rs', 'Bg', 'Bw', 'Rsw', 'Z', 'Oil Density', 'Gas Density', 'Brine Density', 'Oil Viscosity', 'Gas Viscosity', 'Brine Viscosity', 'Co', 'Cg', 'Cw'))
+
+# show graph
+x = table[x_axis]
+y = table[y_axis]
+fig, ax = plt.subplots()
+ax.plot(x,y)
+plt.xlabel(x_axis)
+plt.ylabel(y_axis)
+plt.title(f'Grafik {x_axis} ~ {y_axis} ')
+st.pyplot(fig)

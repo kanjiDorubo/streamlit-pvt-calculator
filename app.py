@@ -14,7 +14,7 @@ plt.style.use('seaborn')
 
 def output(P, T, gas_SG, oil_API, Pb, Psep, Tsep, sat_condition, TDS, corr, Psc, H2S, CO2, N2):
 	df = pd.DataFrame()
-	df['Properties'] = ['P', 'Bo', 'Rs', 'Bg', 'Bw', 'Rsw', 'Z', 'Oil Density', 'Gas Density', 'Brine Density', 'Oil Viscosity', 'Gas Viscosity', 'Brine Viscosity', 'Co', 'Cg', 'Cw']
+	df['Properties'] = ['P (psia)', 'Bo (RB/STB)', 'Rs (Mscf/STB)', 'Bg (RB/Mscf)', 'Bw (RB/STB)', 'Rsw (scf/STB)', 'Z (Vol/Vol)', 'Oil Density (lbm/cf)', 'Gas Density (lbm/cf)', 'Brine Density (lbm/cf)', 'Oil Viscosity (cp)', 'Gas Viscosity (cp)', 'Brine Viscosity (cp)', 'Co x 10^-5 (1/MMpsi)', 'Cg x 10^-5 (1/MMpsi)', 'Cw x 10^-5 (1/MMpsi)']
 
 	# setup
 	T_rankine = T + 460
@@ -28,14 +28,11 @@ def output(P, T, gas_SG, oil_API, Pb, Psep, Tsep, sat_condition, TDS, corr, Psc,
 	# corrected
 	Ppc = Ppc_corr_(Ppc, H2S, CO2, N2)
 	Tpc = Tpc_corr_(Tpc, H2S, CO2, N2)
-	print(Ppc, Tpc)
 
 	Ppr = Ppr_(P, Ppc)
 	Tpr = Tpr_(T_rankine, Tpc)
 
-	print(Ppr, Tpr)
 	Z = DranchukAbouKassem_(Ppr, Tpr)
-	print(Z)
 
 	# calculate
 	Rs = Rso_(P, oil_API, T, Psep, Ygs, Pb)
@@ -67,7 +64,7 @@ def output(P, T, gas_SG, oil_API, Pb, Psep, Tsep, sat_condition, TDS, corr, Psc,
 	df['Values'] = [P, Bo, Rs, Bg, Bw, Rsw, Z, oil_density, gas_density, brine_density, oil_viscosity, gas_viscosity, brine_viscosity, Co, Cg, Cw]
 
 	st.write(f'Condition: {Conditions}')
-	st.table(df)
+	st.dataframe(df)
 
 def show_table(P, T, gas_SG, oil_API, Pb, Psep, Tsep, sat_condition, TDS, corr, Psc, H2S, CO2, N2):
 	table = pd.DataFrame()
